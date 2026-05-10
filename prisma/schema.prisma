@@ -1,0 +1,101 @@
+// ReviewBoost — Prisma Schema
+// Run: npx prisma generate && npx prisma db push
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── User (synced from Clerk via webhook) ───────────────────────
+model User {
+  id             String        @id              // Clerk user ID
+  email          String        @unique
+  name           String?
+  plan           Plan          @default(FREE)
+  stripeCustomerId   String?   @unique
+  stripeSubId        String?   @unique
+  trialEndsAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  businesses     Business[]
+
+  @@index([email])
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+// ─── Business ───────────────────────────────────────────────────
+model Business {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  category    String
+  location    String
+  placeId     String                  // Google Place ID
+  slug        String    @unique       // e.g. "spice-garden"
+  tone        String    @default("friendly")
+  keywords    String    @default("")  // comma-separated
+  services    String    @default("")
+  language    String    @default("English")
+  reviewStyle String    @default("mix")
+  emoji       String    @default("🏪")
+  avgRating   Float?
+  totalReviews Int      @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  events      ReviewEvent[]
+  qrCodes     QRCode[]
+
+  @@index([userId])
+  @@index([slug])
+  @@index([placeId])
+}
+
+// ─── Review Events (funnel analytics) ───────────────────────────
+model ReviewEvent {
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  sessionId    String               // anonymous session
+  stars        Int?                 // null = landed but didn't rate
+  copied       Boolean @default(false)
+  redirected   Boolean @default(false)
+  reviewText   String? @db.Text     // which review they copied
+  device       String?              // mobile / desktop / tablet
+  userAgent    String? @db.Text
+  ipHash       String?              // hashed for privacy
+  createdAt    DateTime @default(now())
+
+  @@index([businessId])
+  @@index([sessionId])
+  @@index([createdAt])
+}
+
+// ─── QR Codes ────────────────────────────────────────────────────
+model QRCode {
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  url          String               // target URL
+  imageUrl     String?              // stored in R2/S3
+  scanCount    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([businessId])
+}
